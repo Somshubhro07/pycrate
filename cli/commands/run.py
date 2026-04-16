@@ -80,6 +80,10 @@ def run(
         [], "--env", "-e",
         help="Set environment variables (KEY=VALUE)",
     ),
+    volume: list[str] = typer.Option(
+        [], "--volume", "-v",
+        help="Bind mount a volume (host_path:container_path[:ro])",
+    ),
 ) -> None:
     """Create and start a container from the specified image."""
     _check_linux()
@@ -109,6 +113,16 @@ def run(
 
     print_info(f"Pulling image {image}...")
 
+    # Validate volume mounts upfront
+    if volume:
+        from engine.volumes import VolumeMount
+        for v in volume:
+            try:
+                VolumeMount.parse(v)
+            except Exception as e:
+                print_error(str(e))
+                raise typer.Exit(1)
+
     # Create the config
     config = ContainerConfig(
         name=name,
@@ -117,6 +131,7 @@ def run(
         memory_limit_mb=memory,
         image=image,
         env=env_dict,
+        volumes=list(volume),
         security_enabled=not no_security,
     )
 

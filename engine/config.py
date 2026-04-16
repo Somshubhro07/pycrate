@@ -52,6 +52,7 @@ class ContainerConfig:
     env: dict[str, str] = field(default_factory=lambda: {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"})
     hostname: str | None = None
     image: str = "alpine:3.20"
+    volumes: list[str] = field(default_factory=list)
     security_enabled: bool = True
     container_id: str = field(default_factory=_generate_container_id)
 
