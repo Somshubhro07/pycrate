@@ -1,0 +1,1 @@
+"""PyCrate CLI package."""

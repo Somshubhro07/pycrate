@@ -1,0 +1,87 @@
+name: Deploy PyCrate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  EC2_HOST: ${{ secrets.EC2_HOST }}
+  EC2_USER: ubuntu
+  EC2_KEY: ${{ secrets.EC2_SSH_KEY }}
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Job 1: Deploy the dashboard to Vercel
+  # -----------------------------------------------------------------------
+  deploy-dashboard:
+    name: Deploy Dashboard to Vercel
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.API_URL }}
+          NEXT_PUBLIC_API_KEY: ${{ secrets.API_KEY }}
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: "--prod"
+          working-directory: dashboard
+
+  # -----------------------------------------------------------------------
+  # Job 2: Deploy the engine + API to EC2
+  # -----------------------------------------------------------------------
+  deploy-engine:
+    name: Deploy Engine to EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /opt/pycrate
+
+            # Pull latest code
+            git pull origin main
+
+            # Update Python dependencies
+            source .venv/bin/activate
+            pip install -r requirements.txt -q
+
+            # Restart the service
+            sudo systemctl restart pycrate
+
+            # Wait for service to start and verify
+            sleep 3
+            curl -sf http://localhost:8000/api/health || echo "Health check failed"
+
+            echo "Deployment complete"

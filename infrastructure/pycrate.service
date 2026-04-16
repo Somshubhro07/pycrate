@@ -1,0 +1,33 @@
+[Unit]
+Description=PyCrate Container Runtime Daemon
+Documentation=https://github.com/Somshubhro07/pycrate
+After=network.target mongodb.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/pycrate
+EnvironmentFile=/opt/pycrate/.env
+ExecStart=/opt/pycrate/.venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 1
+ExecStop=/bin/kill -SIGTERM $MAINPID
+
+# Restart policy: always restart on failure, with backoff
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+# Security hardening (where possible while still needing root for namespaces)
+NoNewPrivileges=no
+ProtectSystem=false
+ProtectHome=true
+ReadWritePaths=/var/lib/pycrate /sys/fs/cgroup
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pycrate
+
+[Install]
+WantedBy=multi-user.target

@@ -29,15 +29,27 @@ from typing import Callable
 from engine.exceptions import NamespaceError
 
 # ---------------------------------------------------------------------------
-# Load libc
+# Lazy libc loading
 # ---------------------------------------------------------------------------
+# libc is loaded on first use, not at import time. This allows the module
+# to be imported on non-Linux platforms (Windows, macOS) for testing and
+# IDE support, while only failing when an actual syscall is invoked.
 
-_libc_path = ctypes.util.find_library("c")
-if _libc_path is None:
-    # Fallback for systems where find_library doesn't resolve (some containers)
-    _libc_path = "libc.so.6"
+_libc: ctypes.CDLL | None = None
 
-libc = ctypes.CDLL(_libc_path, use_errno=True)
+
+def _get_libc() -> ctypes.CDLL:
+    """Load and cache the C standard library. Raises on non-Linux."""
+    global _libc
+    if _libc is not None:
+        return _libc
+
+    _libc_path = ctypes.util.find_library("c")
+    if _libc_path is None:
+        _libc_path = "libc.so.6"
+
+    _libc = ctypes.CDLL(_libc_path, use_errno=True)
+    return _libc
 
 # ---------------------------------------------------------------------------
 # Clone flags (from linux/sched.h)
@@ -161,7 +173,7 @@ def clone(child_func: Callable[[], int], flags: int) -> int:
     import signal
     clone_flags = flags | signal.SIGCHLD
 
-    result = libc.clone(
+    result = _get_libc().clone(
         _child_wrapper,
         stack_top,
         ctypes.c_int(clone_flags),
@@ -187,7 +199,7 @@ def unshare(flags: int) -> None:
     Raises:
         NamespaceError: If the unshare syscall fails.
     """
-    result = libc.unshare(ctypes.c_int(flags))
+    result = _get_libc().unshare(ctypes.c_int(flags))
     _check_errno(result, "unshare")
 
 
@@ -205,7 +217,7 @@ def sethostname(hostname: str) -> None:
         NamespaceError: If sethostname fails.
     """
     name_bytes = hostname.encode("utf-8")
-    result = libc.sethostname(name_bytes, len(name_bytes))
+    result = _get_libc().sethostname(name_bytes, len(name_bytes))
     _check_errno(result, "sethostname")
 
 
@@ -231,7 +243,7 @@ def mount(
     Raises:
         NamespaceError: If the mount syscall fails.
     """
-    result = libc.mount(
+    result = _get_libc().mount(
         source.encode("utf-8"),
         target.encode("utf-8"),
         fstype.encode("utf-8") if fstype else None,
@@ -251,7 +263,7 @@ def umount2(target: str, flags: int = 0) -> None:
     Raises:
         NamespaceError: If umount2 fails.
     """
-    result = libc.umount2(target.encode("utf-8"), ctypes.c_int(flags))
+    result = _get_libc().umount2(target.encode("utf-8"), ctypes.c_int(flags))
     _check_errno(result, "umount2")
 
 
@@ -283,7 +295,7 @@ def pivot_root(new_root: str, put_old: str) -> None:
     # x86_64 syscall number for pivot_root is 155.
     SYS_PIVOT_ROOT = 155
 
-    result = libc.syscall(
+    result = _get_libc().syscall(
         ctypes.c_long(SYS_PIVOT_ROOT),
         new_root.encode("utf-8"),
         put_old.encode("utf-8"),
@@ -305,5 +317,5 @@ def setns(fd: int, nstype: int) -> None:
     Raises:
         NamespaceError: If setns fails.
     """
-    result = libc.setns(ctypes.c_int(fd), ctypes.c_int(nstype))
+    result = _get_libc().setns(ctypes.c_int(fd), ctypes.c_int(nstype))
     _check_errno(result, "setns")

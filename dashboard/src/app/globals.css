@@ -1,0 +1,221 @@
+@import "tailwindcss";
+
+/*
+ * PyCrate Dashboard Design System
+ * Aesthetic: Industrial-utility command center. Deep navy backgrounds,
+ * electric cyan accents, monospace data display. Feels like controlling
+ * infrastructure, not browsing a website.
+ */
+
+@theme {
+  /* -- Color palette -- */
+  --color-bg-primary: #070b14;
+  --color-bg-secondary: #0d1321;
+  --color-bg-card: #111827;
+  --color-bg-card-hover: #161f33;
+  --color-bg-input: #0f1629;
+  --color-bg-terminal: #050810;
+
+  --color-border: #1e293b;
+  --color-border-subtle: #152038;
+  --color-border-active: #00b8d4;
+
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-text-heading: #f1f5f9;
+
+  --color-accent: #00b8d4;
+  --color-accent-bright: #00e5ff;
+  --color-accent-dim: #006680;
+  --color-accent-glow: rgba(0, 184, 212, 0.15);
+
+  --color-success: #10b981;
+  --color-success-dim: rgba(16, 185, 129, 0.15);
+  --color-warning: #f59e0b;
+  --color-warning-dim: rgba(245, 158, 11, 0.15);
+  --color-danger: #ef4444;
+  --color-danger-dim: rgba(239, 68, 68, 0.15);
+  --color-info: #3b82f6;
+
+  /* -- Typography -- */
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+
+  /* -- Spacing scale -- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* -- Shadows -- */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(30, 41, 59, 0.5);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 184, 212, 0.3);
+  --shadow-glow: 0 0 20px rgba(0, 184, 212, 0.2);
+}
+
+/* -- Base -- */
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* -- Subtle grid texture overlay -- */
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 184, 212, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 184, 212, 0.02) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* -- Scrollbar -- */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* -- Utility classes -- */
+
+.card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  border-color: var(--color-border-active);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.card-static {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.text-accent {
+  color: var(--color-accent-bright);
+}
+
+.glow {
+  box-shadow: var(--shadow-glow);
+}
+
+/* -- Status badge colors -- */
+
+.status-running {
+  background: var(--color-success-dim);
+  color: var(--color-success);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.status-created {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--color-info);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.status-stopped {
+  background: var(--color-warning-dim);
+  color: var(--color-warning);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.status-error {
+  background: var(--color-danger-dim);
+  color: var(--color-danger);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* -- Terminal log viewer -- */
+
+.terminal {
+  background: var(--color-bg-terminal);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  overflow-y: auto;
+}
+
+.terminal-line {
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.3);
+}
+
+.terminal-line:hover {
+  background: rgba(0, 184, 212, 0.05);
+}
+
+/* -- Pulse animation for live indicators -- */
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.live-pulse {
+  position: relative;
+}
+
+.live-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: var(--color-success);
+  animation: pulse-ring 1.5s ease-out infinite;
+}
+
+/* -- Chart tooltip override -- */
+
+.recharts-default-tooltip {
+  background: var(--color-bg-card) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-sm) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 12px !important;
+}
