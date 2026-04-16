@@ -1,0 +1,68 @@
+# ──────────────────────────────────────────────
+# Python
+# ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.python-version
+
+# ──────────────────────────────────────────────
+# Environment & Secrets
+# ──────────────────────────────────────────────
+.env
+.env.local
+.env.production
+*.pem
+*.key
+
+# ──────────────────────────────────────────────
+# Node / Next.js (dashboard)
+# ──────────────────────────────────────────────
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/
+dashboard/.vercel
+
+# ──────────────────────────────────────────────
+# IDE
+# ──────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ──────────────────────────────────────────────
+# Container runtime artifacts
+# ──────────────────────────────────────────────
+# Alpine rootfs tarballs (downloaded during setup)
+*.tar.gz
+!docs/**/*.tar.gz
+
+# Container rootfs directories (created at runtime)
+/var/lib/pycrate/
+
+# ──────────────────────────────────────────────
+# Testing & Coverage
+# ──────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ──────────────────────────────────────────────
+# Misc
+# ──────────────────────────────────────────────
+*.log
+*.pid

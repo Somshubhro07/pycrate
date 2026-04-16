@@ -1,0 +1,32 @@
+# ──────────────────────────────────────────────
+# PyCrate — Python Dependencies
+# ──────────────────────────────────────────────
+# Install: pip install -r requirements.txt
+# ──────────────────────────────────────────────
+
+# ── API Framework ─────────────────────────────
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+websockets==14.1
+python-multipart==0.0.18
+
+# ── Database ──────────────────────────────────
+motor==3.7.0
+pymongo==4.10.1
+
+# ── Configuration & Validation ────────────────
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+
+# ── Utilities ─────────────────────────────────
+httpx==0.28.1
+psutil==6.1.1
+
+# ── Testing ───────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.25.0
+httpx==0.28.1
+
+# ── Dev Tools ─────────────────────────────────
+ruff==0.8.6
