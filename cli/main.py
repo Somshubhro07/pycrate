@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import typer
 
-from cli.commands import cluster, compose, containers, dashboard, images, run
+from cli.commands import cluster, compose, containers, dashboard, images, machine, run
 
 __version__ = "0.3.0"
 
@@ -40,6 +40,7 @@ app.add_typer(dashboard.app, name="dashboard", help="Launch the web dashboard")
 app.add_typer(compose.app, name="compose", help="Single-node multi-container orchestration")
 app.add_typer(cluster.app, name="cluster", help="Multi-node cluster management")
 app.add_typer(cluster.deploy_app, name="deploy", help="Manage cluster deployments")
+app.add_typer(machine.app, name="machine", help="Manage the PyCrate Machine (cross-platform VM)")
 
 # Promote frequently-used commands to top level
 # so users can type `pycrate ps` instead of `pycrate containers ps`
@@ -78,6 +79,9 @@ def version() -> None:
         "  Scheduling   resource-aware spread",
         "  Reconciler   desired-state convergence loop",
         "  Networking   port forwarding (v1)",
+        "",
+        "[bold]Machine:[/bold]",
+        f"  Platform    {_platform_info()}",
     ]
 
     panel = Panel(
@@ -86,6 +90,19 @@ def version() -> None:
         border_style="cyan",
     )
     console.print(panel)
+
+
+def _platform_info() -> str:
+    """Detect platform and machine backend for version display."""
+    import platform as _plat
+    system = _plat.system()
+    if system == "Linux":
+        return "Linux (native — no VM)"
+    elif system == "Darwin":
+        return "macOS (QEMU backend)"
+    elif system == "Windows":
+        return "Windows (WSL2 backend)"
+    return f"{system} (unknown)"
 
 
 def main() -> None:
