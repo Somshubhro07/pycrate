@@ -1,0 +1,40 @@
+# PyCrate Example Manifest
+# ========================
+#
+# This file defines a multi-container application.
+# Start with: sudo pycrate up
+# Stop with:  sudo pycrate down
+#
+# See docs/CLI.md for full reference.
+
+version: 1
+
+services:
+  # A simple web server
+  web:
+    image: alpine:3.20
+    command: ["httpd", "-f", "-p", "8080", "-h", "/var/www"]
+    cpu: 25
+    memory: 64
+    ports:
+      - "8080:8080"
+    restart: always
+    health_check:
+      tcp: 8080
+      interval: 10
+      retries: 3
+      start_period: 5
+    env:
+      APP_NAME: pycrate-demo
+
+  # A background worker
+  worker:
+    image: alpine:3.20
+    command: ["sh", "-c", "while true; do echo '[worker] processing at '$(date); sleep 5; done"]
+    cpu: 10
+    memory: 32
+    restart: on-failure
+    depends_on:
+      - web
+    env:
+      WORKER_MODE: background

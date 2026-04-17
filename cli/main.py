@@ -20,9 +20,9 @@ from __future__ import annotations
 
 import typer
 
-from cli.commands import compose, containers, dashboard, images, run
+from cli.commands import cluster, compose, containers, dashboard, images, run
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 app = typer.Typer(
     name="pycrate",
@@ -37,7 +37,9 @@ app.add_typer(run.app, name="run", help="Create and start a container")
 app.add_typer(containers.app, name="containers", hidden=True)
 app.add_typer(images.app, name="image", help="Manage images")
 app.add_typer(dashboard.app, name="dashboard", help="Launch the web dashboard")
-app.add_typer(compose.app, name="compose", help="Multi-container orchestration")
+app.add_typer(compose.app, name="compose", help="Single-node multi-container orchestration")
+app.add_typer(cluster.app, name="cluster", help="Multi-node cluster management")
+app.add_typer(cluster.deploy_app, name="deploy", help="Manage cluster deployments")
 
 # Promote frequently-used commands to top level
 # so users can type `pycrate ps` instead of `pycrate containers ps`
@@ -71,6 +73,11 @@ def version() -> None:
         "  Filesystem   OverlayFS + pivot_root",
         "  Networking   veth pairs + bridge",
         "  Security     seccomp BPF + capability dropping",
+        "",
+        "[bold]Cluster:[/bold]",
+        "  Scheduling   resource-aware spread",
+        "  Reconciler   desired-state convergence loop",
+        "  Networking   port forwarding (v1)",
     ]
 
     panel = Panel(

@@ -60,6 +60,7 @@ from engine.security import (
     harden_container,
     install_seccomp_filter,
 )
+from engine.volumes import VolumeMount, setup_volume_mounts
 
 __all__ = [
     # Core
@@ -102,7 +103,10 @@ __all__ = [
     "RootfsError",
     "ImageNotFoundError",
     "NetworkError",
+    # Volumes
+    "VolumeMount",
+    "setup_volume_mounts",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 

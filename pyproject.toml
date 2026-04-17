@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycrate"
-version = "0.2.0"
+version = "0.3.0"
 description = "A container runtime and orchestrator built from scratch in Python using Linux kernel primitives."
 readme = "README.md"
 license = { text = "MIT" }
@@ -57,7 +57,7 @@ Repository = "https://github.com/Somshubhro07/pycrate"
 Documentation = "https://github.com/Somshubhro07/pycrate/tree/main/docs"
 
 [tool.setuptools.packages.find]
-include = ["engine*", "api*", "cli*", "orchestrator*"]
+include = ["engine*", "api*", "cli*", "orchestrator*", "cluster*"]
 
 [tool.ruff]
 target-version = "py311"

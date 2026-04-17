@@ -4,7 +4,7 @@
 
 PyCrate implements container isolation using Linux kernel primitives -- namespaces, cgroups v2, pivot_root, OverlayFS, seccomp BPF, and capability dropping -- called directly from Python via `ctypes`. No wrappers. No shelling out. Every syscall is explicit.
 
-It includes a CLI tool (`pycrate`), a FastAPI daemon for HTTP/WebSocket management, and a Next.js dashboard for real-time monitoring.
+It includes a CLI tool (`pycrate`), multi-node cluster orchestration with a master/agent architecture, a FastAPI daemon for HTTP/WebSocket management, and a Next.js dashboard for real-time monitoring.
 
 This is not a wrapper around Docker. It implements the same low-level mechanisms that Docker and runc use under the hood.
 
@@ -20,7 +20,10 @@ This is not a wrapper around Docker. It implements the same low-level mechanisms
 | Multi-image support | Alpine (HTTP tarball), Ubuntu and Debian (debootstrap) |
 | Security hardening | Seccomp BPF syscall filtering + capability bounding set |
 | Networking | Virtual ethernet pairs (`veth`) with a host bridge |
-| CLI | `pycrate run/ps/stop/rm/pull/images/dashboard` |
+| Volume mounts | Bind mounts for local development (`-v host:container`) |
+| CLI | `pycrate run/ps/stop/rm/pull/images/up/down/deploy` |
+| Single-node orchestration | Compose engine with health checks and restart policies |
+| Multi-node cluster | Master/agent architecture with resource-aware scheduling |
 | Management API | FastAPI daemon -- REST + WebSocket for live metrics |
 | Web dashboard | Next.js UI with live resource graphs |
 
@@ -64,9 +67,20 @@ bash scripts/setup-wsl.sh
 ```
 User
   |
-  +-- CLI (pycrate run/ps/stop/...)
+  +-- CLI (pycrate run/ps/stop/up/deploy/...)
   |       |
   |       +-- Engine (direct Python calls, no network)
+  |
+  +-- Cluster Mode
+  |       |
+  |       +-- Master (FastAPI :9000) ── Reconciler ── Scheduler
+  |       |       |                         |             |
+  |       |       +-- SQLite state store    +-- desired vs actual state
+  |       |       +-- Handles heartbeats         convergence loop
+  |       |
+  |       +-- Agent (worker nodes) ── polls master → executes assignments
+  |               |                     ↑
+  |               +-- Engine            +-- heartbeat every 5s
   |
   +-- Dashboard (Next.js :3000)
           |
@@ -111,6 +125,7 @@ See [docs/SECURITY.md](docs/SECURITY.md) for the complete list.
 ## CLI Reference
 
 ```bash
+# Container management
 pycrate run <image> [command] [options]  # Create and start a container
 pycrate ps                               # List containers
 pycrate stop <id|name>                   # Stop a container
@@ -118,9 +133,27 @@ pycrate rm <id|name>                     # Remove a container
 pycrate logs <id|name>                   # View logs
 pycrate inspect <id|name>               # Detailed info
 
+# Image management
 pycrate pull <image>                     # Pull a base image
 pycrate images                           # List cached images
-pycrate rmi <image:version>              # Remove cached image
+
+# Single-node compose
+pycrate up                               # Start services from pycrate.yml
+pycrate down                             # Stop all services
+pycrate compose status                   # Service status
+pycrate compose scale <svc> --replicas=N # Scale a service
+
+# Multi-node cluster
+pycrate cluster init                     # Start a master node
+pycrate cluster join <master-url>        # Join as a worker
+pycrate cluster nodes                    # List cluster nodes
+pycrate cluster status                   # Full cluster state
+
+# Cluster deployments
+pycrate deploy create <svc> --image alpine --replicas 3
+pycrate deploy scale <svc> --replicas 5
+pycrate deploy ls                        # List deployments
+pycrate deploy rm <svc>                  # Remove a deployment
 
 pycrate dashboard                        # Launch web dashboard
 pycrate version                          # Show version info
@@ -156,8 +189,21 @@ pycrate/
         rootfs.py         Root filesystem setup
         security.py       Seccomp BPF + capabilities
         networking.py     Container networking
+        volumes.py        Bind mount support
         metrics.py        Resource metrics collection
         exceptions.py     Exception hierarchy
+
+    orchestrator/         Single-node orchestration
+        manifest.py       pycrate.yml parser
+        compose.py        Compose engine + reconciliation loop
+        health.py         Health check system (HTTP, TCP, exec)
+
+    cluster/              Multi-node orchestration
+        state.py          SQLite state store
+        scheduler.py      Resource-aware spread scheduler
+        reconciler.py     Desired-state convergence engine
+        master.py         Control plane API (FastAPI)
+        agent.py          Worker node daemon
 
     cli/                  Command-line interface (Typer)
         main.py           Entry point
@@ -166,29 +212,22 @@ pycrate/
             run.py        pycrate run
             containers.py pycrate ps/stop/rm/logs/inspect
             images.py     pycrate pull/images/rmi
+            compose.py    pycrate up/down/status/scale
+            cluster.py    pycrate cluster + deploy
             dashboard.py  pycrate dashboard
 
     api/                  REST + WebSocket API (FastAPI)
-        main.py           FastAPI application
-        routes/           HTTP endpoints
-        schemas.py        Pydantic models
-
     dashboard/            Web UI (Next.js 15)
-        src/
-            components/   React components
-            pages/        Dashboard pages
 
     docs/                 Documentation
+        INTERNALS.md      How containers actually work (Linux kernel deep dive)
         ARCHITECTURE.md   System design
         SECURITY.md       Security model
         CLI.md            CLI reference
         ROADMAP.md        Development roadmap
-        DEPLOYMENT.md     Deployment guide
-
-    scripts/
-        setup-wsl.sh      WSL2 development setup
 
     install.sh            One-line install script
+    pycrate.yml           Example compose manifest
     pyproject.toml        Package configuration
 ```
 
@@ -198,10 +237,11 @@ pycrate/
 
 | Phase | Status | Description |
 |---|---|---|
-| 1. Container Engine | Done | Namespaces, cgroups, rootfs, networking |
-| 2. Production Hardening | Done | Multi-image, OverlayFS, seccomp, CLI |
-| 3. Single-Node Orchestration | Planned | Compose manifests, health checks, restart policies |
-| 4. Multi-Node Orchestration | Planned | Master/agent, scheduling, rolling deployments |
+| 1. Container Engine | ✅ Done | Namespaces, cgroups, rootfs, networking |
+| 2. Production Hardening | ✅ Done | Multi-image, OverlayFS, seccomp, CLI |
+| 3. Single-Node Orchestration | ✅ Done | Compose manifests, health checks, restart policies |
+| 4. Multi-Node Orchestration | ✅ Done | Master/agent, scheduling, reconciliation engine |
+| 5. Distribution | Next | PyPI publishing, CI/CD |
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full plan.
 
