@@ -150,6 +150,7 @@ class ClusterState:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
+        self._write_lock = threading.Lock()  # Serialize all writes
         self._init_schema()
 
     def _get_conn(self) -> sqlite3.Connection:
@@ -304,50 +305,60 @@ class ClusterState:
         containers: list[dict],
         resources: dict[str, int],
     ) -> None:
-        """Process a heartbeat from an agent."""
+        """Process a heartbeat from an agent.
+
+        Atomic: wraps DELETE + INSERT in a single transaction so the
+        reconciler never sees an empty container set mid-update.
+        """
         conn = self._get_conn()
         now = time.time()
 
-        # Update node status and resources
-        conn.execute("""
-            UPDATE nodes SET
-                status = 'healthy',
-                last_heartbeat = ?,
-                cpu_used = ?,
-                memory_used = ?
-            WHERE node_id = ?
-        """, (now, resources.get("cpu_used", 0),
-              resources.get("memory_used", 0), node_id))
+        with self._write_lock:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Update node status and resources
+                conn.execute("""
+                    UPDATE nodes SET
+                        status = 'healthy',
+                        last_heartbeat = ?,
+                        cpu_used = ?,
+                        memory_used = ?
+                    WHERE node_id = ?
+                """, (now, resources.get("cpu_used", 0),
+                      resources.get("memory_used", 0), node_id))
 
-        # Sync container state from this node
-        # First, remove stale container records for this node
-        conn.execute(
-            "DELETE FROM containers WHERE node_id = ?", (node_id,)
-        )
+                # Sync container state from this node
+                # Atomic: delete then insert in the same transaction
+                conn.execute(
+                    "DELETE FROM containers WHERE node_id = ?", (node_id,)
+                )
 
-        # Insert fresh container records
-        for c in containers:
-            conn.execute("""
-                INSERT OR REPLACE INTO containers
-                    (container_id, node_id, deployment_id, service_name,
-                     status, pid, cpu_used, memory_used, health,
-                     started_at, reported_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                c.get("container_id", ""),
-                node_id,
-                c.get("deployment_id", ""),
-                c.get("name", c.get("service_name", "")),
-                c.get("status", "unknown"),
-                c.get("pid"),
-                c.get("config", {}).get("cpu_limit_percent", 0),
-                c.get("config", {}).get("memory_limit_mb", 0),
-                c.get("health", "none"),
-                c.get("started_at", 0),
-                now,
-            ))
+                # Insert fresh container records
+                for c in containers:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO containers
+                            (container_id, node_id, deployment_id, service_name,
+                             status, pid, cpu_used, memory_used, health,
+                             started_at, reported_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        c.get("container_id", ""),
+                        node_id,
+                        c.get("deployment_id", ""),
+                        c.get("name", c.get("service_name", "")),
+                        c.get("status", "unknown"),
+                        c.get("pid"),
+                        c.get("config", {}).get("cpu_limit_percent", 0),
+                        c.get("config", {}).get("memory_limit_mb", 0),
+                        c.get("health", "none"),
+                        c.get("started_at", 0),
+                        now,
+                    ))
 
-        conn.commit()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
     def mark_node_unhealthy(self, node_id: str) -> None:
         """Mark a node as unhealthy (missed heartbeats)."""
@@ -558,10 +569,62 @@ class ClusterState:
         """Remove acknowledged assignments older than 1 hour."""
         conn = self._get_conn()
         cutoff = time.time() - 3600
-        conn.execute(
-            "DELETE FROM assignments WHERE acknowledged = 1 AND created_at < ?",
-            (cutoff,),
-        )
+        with self._write_lock:
+            conn.execute(
+                "DELETE FROM assignments WHERE acknowledged = 1 AND created_at < ?",
+                (cutoff,),
+            )
+            conn.commit()
+
+    def count_pending_creates(self, deployment_id: str) -> int:
+        """Count unacknowledged 'create' assignments for a deployment.
+
+        Used by the reconciler to avoid scheduling duplicate containers
+        while agents haven't yet polled and started them.
+        """
+        conn = self._get_conn()
+        row = conn.execute("""
+            SELECT COUNT(*) FROM assignments
+            WHERE deployment_id = ? AND action = 'create' AND acknowledged = 0
+        """, (deployment_id,)).fetchone()
+        return row[0] if row else 0
+
+    def has_pending_stop(self, container_id: str) -> bool:
+        """Check if there's already a pending stop assignment for a container."""
+        conn = self._get_conn()
+        row = conn.execute("""
+            SELECT COUNT(*) FROM assignments
+            WHERE container_id = ? AND action = 'stop' AND acknowledged = 0
+        """, (container_id,)).fetchone()
+        return (row[0] or 0) > 0
+
+    def reserve_resources(self, node_id: str, cpu: int, memory: int) -> None:
+        """Optimistically reserve resources on a node.
+
+        Called by the reconciler after scheduling. Will be corrected
+        on the next heartbeat from the agent.
+        """
+        conn = self._get_conn()
+        with self._write_lock:
+            conn.execute("""
+                UPDATE nodes SET
+                    cpu_used = cpu_used + ?,
+                    memory_used = memory_used + ?
+                WHERE node_id = ?
+            """, (cpu, memory, node_id))
+            conn.commit()
+
+    def update_master_heartbeat(self, node_id: str) -> None:
+        """Update the master node's own heartbeat timestamp.
+
+        Called by the reconciler so the master doesn't mark itself
+        as unhealthy.
+        """
+        conn = self._get_conn()
+        conn.execute("""
+            UPDATE nodes SET last_heartbeat = ?
+            WHERE node_id = ? AND role = 'master'
+        """, (time.time(), node_id))
         conn.commit()
 
     # -- Events ----------------------------------------------------------------

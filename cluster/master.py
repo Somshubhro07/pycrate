@@ -76,7 +76,7 @@ def create_master_app(
     try:
         from fastapi import FastAPI, HTTPException
         from fastapi.middleware.cors import CORSMiddleware
-        from pydantic import BaseModel
+        from pydantic import BaseModel, validator
     except ImportError:
         raise RuntimeError(
             "Master node requires FastAPI. Install with: "
@@ -100,7 +100,7 @@ def create_master_app(
 
     # Initialize scheduler, reconciler, and deployer
     scheduler = Scheduler(state)
-    reconciler = Reconciler(state, scheduler)
+    reconciler = Reconciler(state, scheduler, master_id=master_id)
     deployer = RollingDeployer(state, scheduler)
 
     # --- FastAPI app ---
@@ -148,8 +148,33 @@ def create_master_app(
         env: dict = {}
         health_check: dict | None = None
 
+        @validator("service_name")
+        def name_not_empty(cls, v):
+            v = v.strip()
+            if not v:
+                raise ValueError("service_name must not be empty")
+            return v
+
+        @validator("replicas")
+        def replicas_positive(cls, v):
+            if v < 1:
+                raise ValueError("replicas must be >= 1")
+            return v
+
+        @validator("cpu", "memory")
+        def resources_positive(cls, v):
+            if v < 1:
+                raise ValueError("cpu and memory must be >= 1")
+            return v
+
     class ScaleRequest(BaseModel):
         replicas: int
+
+        @validator("replicas")
+        def replicas_not_negative(cls, v):
+            if v < 0:
+                raise ValueError("replicas must be >= 0")
+            return v
 
     class AckRequest(BaseModel):
         assignment_ids: list[str]

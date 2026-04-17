@@ -1,0 +1,31 @@
+# Include project metadata
+include LICENSE
+include README.md
+include pyproject.toml
+include requirements.txt
+include install.sh
+
+# Include documentation
+recursive-include docs *.md
+
+# Include all Python source
+recursive-include engine *.py
+recursive-include cli *.py
+recursive-include cluster *.py
+recursive-include orchestrator *.py
+recursive-include api *.py
+recursive-include tests *.py
+
+# Include config files
+include pycrate.yml
+
+# Exclude build artifacts and dev files
+global-exclude __pycache__
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude .DS_Store
+prune .github
+prune .venv
+prune dashboard
+prune infrastructure
+prune pycrate.egg-info

@@ -29,12 +29,46 @@ This is not a wrapper around Docker. It implements the same low-level mechanisms
 
 ---
 
-## Quick Start
+## Installation
+
+### From PyPI
 
 ```bash
-# Install (Linux / WSL2)
+# Core runtime (CLI + engine)
+pip install pycrate
+
+# With cluster support (includes FastAPI for master node)
+pip install pycrate[cluster]
+
+# With full API server
+pip install pycrate[server]
+```
+
+### From Source
+
+```bash
+git clone https://github.com/Somshubhro07/pycrate.git
+cd pycrate
+pip install -e ".[cluster,dev]"
+```
+
+### One-Line Install (Linux / WSL2)
+
+```bash
+# Basic install
 curl -sSL https://raw.githubusercontent.com/Somshubhro07/pycrate/main/install.sh | sudo bash
 
+# With cluster support
+curl -sSL https://raw.githubusercontent.com/Somshubhro07/pycrate/main/install.sh | sudo bash -s -- --cluster
+```
+
+---
+
+## Quick Start
+
+### Single Node
+
+```bash
 # Pull an image
 sudo pycrate pull alpine
 
@@ -47,6 +81,21 @@ sudo pycrate ps
 # Stop and remove
 sudo pycrate stop test
 sudo pycrate rm test
+```
+
+### Multi-Node Cluster
+
+```bash
+# On the master node:
+sudo pycrate cluster init
+
+# On each worker node:
+sudo pycrate cluster join --master http://<master-ip>:9000
+
+# Deploy a service across the cluster:
+pycrate deploy create web --image alpine:3.20 --replicas 3
+pycrate deploy ls
+pycrate cluster status
 ```
 
 ### WSL2 (Windows)
@@ -204,6 +253,8 @@ pycrate/
         reconciler.py     Desired-state convergence engine
         master.py         Control plane API (FastAPI)
         agent.py          Worker node daemon
+        deploy.py         Rolling update manager
+        portforward.py    iptables DNAT port forwarding
 
     cli/                  Command-line interface (Typer)
         main.py           Entry point
@@ -241,7 +292,7 @@ pycrate/
 | 2. Production Hardening | ✅ Done | Multi-image, OverlayFS, seccomp, CLI |
 | 3. Single-Node Orchestration | ✅ Done | Compose manifests, health checks, restart policies |
 | 4. Multi-Node Orchestration | ✅ Done | Master/agent, scheduling, reconciliation engine |
-| 5. Distribution | Next | PyPI publishing, CI/CD |
+| 5. Distribution | ✅ Done | Port forwarding, PyPI packaging, CI/CD automation |
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full plan.
 
@@ -251,7 +302,9 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the full plan.
 
 - Linux (Ubuntu 22.04+ recommended, WSL2 supported)
 - Python 3.11+
-- Root privileges
+- Root privileges (for container operations)
+- `debootstrap` (for Ubuntu/Debian images)
+- `iptables` (for networking and port forwarding)
 
 ---
 

@@ -57,9 +57,11 @@ class Reconciler:
         self,
         state: ClusterState,
         scheduler: Scheduler,
+        master_id: str = "",
     ) -> None:
         self._state = state
         self._scheduler = scheduler
+        self._master_id = master_id
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._pass_count = 0
@@ -126,6 +128,10 @@ class Reconciler:
 
         Public method so it can be called manually for testing.
         """
+        # Phase 0: Keep master heartbeat alive (W5 fix)
+        if self._master_id:
+            self._state.update_master_heartbeat(self._master_id)
+
         # Phase 1: Check node health
         unhealthy_nodes = self._check_node_health()
 
@@ -133,11 +139,14 @@ class Reconciler:
         if unhealthy_nodes:
             self._handle_node_failures(unhealthy_nodes)
 
+        # Single fetch for phases 3+4 (W8 fix: avoid double query)
+        all_containers = self._state.get_all_containers()
+
         # Phase 3: Reconcile deployments
-        self._reconcile_deployments()
+        self._reconcile_deployments(all_containers)
 
         # Phase 4: Clean up orphaned containers
-        self._cleanup_orphans()
+        self._cleanup_orphans(all_containers)
 
         # Phase 5: Periodic maintenance
         if self._pass_count % 60 == 0:  # Every ~5 minutes
@@ -179,15 +188,17 @@ class Reconciler:
                         message=f"Container lost due to node {node_id} failure",
                     )
 
-    def _reconcile_deployments(self) -> None:
+    def _reconcile_deployments(self, all_containers: list) -> None:
         """Compare desired deployments with actual containers.
 
         For each deployment:
         - If running < desired: schedule new containers
         - If running > desired: mark excess for removal
+
+        Counts pending 'create' assignments to avoid scheduling
+        duplicates while agents haven't polled yet (C1 fix).
         """
         deployments = self._state.get_all_deployments()
-        all_containers = self._state.get_all_containers()
 
         for deployment in deployments:
             running = [
@@ -196,7 +207,13 @@ class Reconciler:
                 and c.status == "running"
             ]
 
-            deficit = deployment.replicas - len(running)
+            # C1 fix: count pending creates to avoid duplicates
+            pending_creates = self._state.count_pending_creates(
+                deployment.deployment_id
+            )
+
+            effective_count = len(running) + pending_creates
+            deficit = deployment.replicas - effective_count
 
             if deficit > 0:
                 self._scale_up(deployment, deficit)
@@ -227,15 +244,10 @@ class Reconciler:
                     env=deployment.env,
                 )
 
-                # Optimistic resource reservation
-                # (will be corrected on next heartbeat)
-                self._state._get_conn().execute("""
-                    UPDATE nodes SET
-                        cpu_used = cpu_used + ?,
-                        memory_used = memory_used + ?
-                    WHERE node_id = ?
-                """, (deployment.cpu, deployment.memory, node.node_id))
-                self._state._get_conn().commit()
+                # C2 fix: use public API for resource reservation
+                self._state.reserve_resources(
+                    node.node_id, deployment.cpu, deployment.memory
+                )
 
                 self._state.add_event(
                     event_type="container.scheduled",
@@ -287,7 +299,7 @@ class Reconciler:
                 message=f"Stopping excess replica of {deployment.service_name}",
             )
 
-    def _cleanup_orphans(self) -> None:
+    def _cleanup_orphans(self, all_containers: list) -> None:
         """Find and stop containers that don't belong to any deployment.
 
         These can happen when a deployment is deleted while containers
@@ -296,14 +308,17 @@ class Reconciler:
         deployments = self._state.get_all_deployments()
         deployment_ids = {d.deployment_id for d in deployments}
 
-        all_containers = self._state.get_all_containers()
-
         for container in all_containers:
             if container.status != "running":
                 continue
 
             if (container.deployment_id
                     and container.deployment_id not in deployment_ids):
+
+                # W3 fix: don't create duplicate stop assignments
+                if self._state.has_pending_stop(container.container_id):
+                    continue
+
                 logger.info(
                     "Orphaned container %s (deployment %s deleted), stopping",
                     container.container_id, container.deployment_id,

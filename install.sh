@@ -117,8 +117,15 @@ log "Installing PyCrate..."
 
 "$PYTHON_CMD" -m pip install --upgrade pip setuptools wheel -q
 
+# Check if user wants cluster support
+INSTALL_EXTRA=""
+if [[ "${1:-}" == "--cluster" ]] || [[ "${1:-}" == "-c" ]]; then
+    INSTALL_EXTRA="[cluster]"
+    log "Installing with cluster support (FastAPI + Uvicorn)..."
+fi
+
 # Install from GitHub
-"$PYTHON_CMD" -m pip install "git+${REPO}" -q
+"$PYTHON_CMD" -m pip install "git+${REPO}${INSTALL_EXTRA}" -q
 
 ok "PyCrate installed"
 
@@ -128,6 +135,7 @@ ok "PyCrate installed"
 
 mkdir -p /var/lib/pycrate/images
 mkdir -p /var/lib/pycrate/containers
+mkdir -p /var/lib/pycrate/cluster
 
 ok "Data directory created at /var/lib/pycrate"
 
@@ -140,7 +148,7 @@ if command -v pycrate &>/dev/null; then
     echo ""
     pycrate version
     echo ""
-    log "Quick start:"
+    log "Quick start (single node):"
     echo ""
     echo "  sudo pycrate pull alpine"
     echo "  sudo pycrate run alpine /bin/sh --name test"
@@ -148,10 +156,23 @@ if command -v pycrate &>/dev/null; then
     echo "  sudo pycrate stop test"
     echo "  sudo pycrate rm test"
     echo ""
-    log "For the web dashboard:"
+    log "Quick start (cluster):"
+    echo ""
+    echo "  # On the master node:"
+    echo "  sudo pycrate cluster init"
+    echo ""
+    echo "  # On each worker node:"
+    echo "  sudo pycrate cluster join --master http://<master-ip>:9000"
+    echo ""
+    echo "  # Deploy a service:"
+    echo "  pycrate deploy create web --image alpine:3.20 --replicas 3"
+    echo "  pycrate deploy ls"
+    echo ""
+    log "Web dashboard:"
     echo "  sudo pycrate dashboard"
     echo ""
 else
     warn "pycrate command not found in PATH. You may need to add ~/.local/bin to PATH:"
     echo '  export PATH="$HOME/.local/bin:$PATH"'
 fi
+

@@ -20,7 +20,9 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: System :: Operating System Kernels :: Linux",
+    "Topic :: System :: Systems Administration",
     "Topic :: Software Development :: Libraries",
 ]
 
@@ -31,21 +33,25 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cluster = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.10.0",
+]
 server = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
-    "motor>=3.7.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
     "python-dotenv>=1.0.0",
-    "websockets>=14.0",
-    "psutil>=6.1.0",
     "httpx>=0.28.0",
 ]
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.25.0",
     "ruff>=0.8.0",
+    "build>=1.0.0",
+    "twine>=5.0.0",
 ]
 
 [project.scripts]

@@ -10,12 +10,19 @@ from __future__ import annotations
 
 import pytest
 
-from engine.config import ContainerConfig
+try:
+    from engine.config import ContainerConfig
+    _HAS_ENGINE = True
+except ImportError:
+    _HAS_ENGINE = False
+    ContainerConfig = None  # type: ignore
 
 
 @pytest.fixture
-def sample_config() -> ContainerConfig:
+def sample_config():
     """A valid ContainerConfig for testing."""
+    if not _HAS_ENGINE:
+        pytest.skip("engine module not available on this platform")
     return ContainerConfig(
         name="test-container",
         command=["/bin/sh"],
@@ -26,14 +33,18 @@ def sample_config() -> ContainerConfig:
 
 
 @pytest.fixture
-def minimal_config() -> ContainerConfig:
+def minimal_config():
     """A minimal ContainerConfig with defaults."""
+    if not _HAS_ENGINE:
+        pytest.skip("engine module not available on this platform")
     return ContainerConfig(name="minimal")
 
 
 @pytest.fixture
-def high_resource_config() -> ContainerConfig:
+def high_resource_config():
     """A ContainerConfig with maximum resource limits."""
+    if not _HAS_ENGINE:
+        pytest.skip("engine module not available on this platform")
     return ContainerConfig(
         name="heavy",
         cpu_limit_percent=100,

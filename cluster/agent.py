@@ -98,6 +98,11 @@ class Agent:
         self._running = True
         self._consecutive_failures = 0
         self._deployment_map: dict[str, str] = {}  # container_id -> deployment_id
+        # Cache host resources (they don't change during runtime)
+        self._cpu_total, self._memory_total = _get_host_resources()
+
+        # Port forwarding (lazy init — only if assignments have ports)
+        self._port_forwarder = None
 
     def run(self) -> None:
         """Main agent loop. Blocks until SIGINT/SIGTERM."""
@@ -217,9 +222,9 @@ class Agent:
             "node_id": self.node_id,
             "containers": containers,
             "resources": {
-                "cpu_total": _get_host_resources()[0],
+                "cpu_total": self._cpu_total,
                 "cpu_used": cpu_used,
-                "memory_total": _get_host_resources()[1],
+                "memory_total": self._memory_total,
                 "memory_used": memory_used,
             },
         })
@@ -289,6 +294,11 @@ class Agent:
         # Track which deployment this container belongs to
         self._deployment_map[container.container_id] = deployment_id
 
+        # Set up port forwarding if ports are specified
+        ports = assignment.get("ports", [])
+        if ports:
+            self._setup_port_forwarding(container, ports)
+
         logger.info(
             "Container %s started for %s [PID %s]",
             container.container_id, service_name, container.pid,
@@ -304,6 +314,10 @@ class Agent:
 
         logger.info("Stopping container %s", container_id)
 
+        # Clean up port forwarding rules first
+        if self._port_forwarder:
+            self._port_forwarder.remove_all_for_container(container_id)
+
         try:
             self._manager.stop_container(container_id, timeout=10)
             self._manager.remove_container(container_id)
@@ -311,6 +325,40 @@ class Agent:
             self._deployment_map.pop(container_id, None)
         except Exception as e:
             logger.warning("Error stopping container %s: %s", container_id, e)
+
+    def _setup_port_forwarding(self, container, ports: list) -> None:
+        """Set up iptables DNAT rules for container port mappings.
+
+        Port format: [{"host": 8080, "container": 80, "protocol": "tcp"}]
+        """
+        if self._port_forwarder is None:
+            from cluster.portforward import PortForwarder
+            self._port_forwarder = PortForwarder()
+
+        # Get container IP from the networking config
+        container_ip = getattr(
+            getattr(container, 'network', None), 'container_ip', None
+        )
+        if not container_ip:
+            logger.warning(
+                "Container %s has no IP, skipping port forwards",
+                container.container_id,
+            )
+            return
+
+        for port in ports:
+            try:
+                self._port_forwarder.add_rule(
+                    container_id=container.container_id,
+                    host_port=port.get("host", port.get("container", 80)),
+                    container_ip=container_ip,
+                    container_port=port.get("container", 80),
+                    protocol=port.get("protocol", "tcp"),
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to set up port forward %s: %s", port, e
+                )
 
     def _ack_assignments(self, assignment_ids: list[str]) -> None:
         """Acknowledge completed assignments."""
@@ -322,14 +370,15 @@ class Agent:
     def _get_local_ip(self) -> str:
         """Best-effort detection of local IP address."""
         import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
             ip = s.getsockname()[0]
-            s.close()
             return ip
         except Exception:
             return "127.0.0.1"
+        finally:
+            s.close()
 
     def _handle_shutdown(self, signum, frame) -> None:
         """Handle SIGINT/SIGTERM for graceful shutdown."""
