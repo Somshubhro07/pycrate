@@ -172,11 +172,26 @@ def get_ssh_public_key() -> str:
     return get_public_key(SSH_KEY_PATH)
 
 
-def get_wsl_setup_script(ssh_pub_key: str) -> str:
+def get_wsl_setup_script(ssh_pub_key: str, host_project_dir: str | None = None) -> str:
     """Generate a shell script to bootstrap PyCrate inside WSL2.
 
     This is run inside the WSL2 Alpine distro after import.
+
+    Args:
+        ssh_pub_key: SSH public key to inject for remote access.
+        host_project_dir: Optional Windows path to the PyCrate source.
+            Auto-converted to WSL mount path (e.g. C:\\foo -> /mnt/c/foo).
     """
+    # Convert Windows path to WSL mount path
+    install_cmd = 'echo "PyCrate source not provided, skipping install"'
+    if host_project_dir:
+        # C:\Users\HP\... -> /mnt/c/Users/HP/...
+        wsl_path = host_project_dir.replace("\\", "/")
+        if len(wsl_path) >= 2 and wsl_path[1] == ":":
+            drive = wsl_path[0].lower()
+            wsl_path = f"/mnt/{drive}{wsl_path[2:]}"
+        install_cmd = f'pip3 install --break-system-packages -e "{wsl_path}" 2>/dev/null || pip3 install -e "{wsl_path}" || echo "PyCrate install from source failed"'
+
     return f"""#!/bin/sh
 set -e
 
@@ -199,10 +214,8 @@ ssh-keygen -A  # Generate host keys
 echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
 echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
 
-# Install PyCrate
-pip3 install --break-system-packages pycrate 2>/dev/null || \\
-    pip3 install pycrate 2>/dev/null || \\
-    echo "PyCrate pip install skipped (will install from source)"
+# Install PyCrate from host source
+{install_cmd}
 
 # Create data directories
 mkdir -p /var/lib/pycrate/images

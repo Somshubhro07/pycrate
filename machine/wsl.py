@@ -82,12 +82,15 @@ class WSL2Backend(MachineBackend):
         # This avoids shell quoting issues with inline scripts.
         from machine.image import get_wsl_setup_script
         ssh_pub_key = get_ssh_public_key()
-        setup_script = get_wsl_setup_script(ssh_pub_key)
+
+        # Detect host project directory for installing PyCrate from source
+        host_project_dir = self._find_host_project_dir()
+        setup_script = get_wsl_setup_script(ssh_pub_key, host_project_dir)
 
         # Write the script to the WSL filesystem via stdin
         script_path = "/tmp/pycrate_setup.sh"
         self._write_file_to_distro(script_path, setup_script)
-        self._exec_in_distro(f"chmod +x {script_path} && {script_path}", timeout=120)
+        self._exec_in_distro(f"chmod +x {script_path} && {script_path}", timeout=180)
 
         logger.info("PyCrate Machine (WSL2) created successfully")
 
@@ -184,6 +187,26 @@ class WSL2Backend(MachineBackend):
         return info
 
     # -- Internal helpers --
+
+    @staticmethod
+    def _find_host_project_dir() -> str | None:
+        """Find the PyCrate project directory on the Windows host.
+
+        Walks up from the installed package location to find pyproject.toml,
+        which marks the project root.
+        """
+        try:
+            import cli.main as _cli
+            start = Path(_cli.__file__).resolve().parent.parent
+            # Walk up max 3 levels looking for pyproject.toml
+            for _ in range(4):
+                if (start / "pyproject.toml").exists():
+                    return str(start)
+                start = start.parent
+        except Exception:
+            pass
+        return None
+
 
     def _distro_exists(self) -> bool:
         """Check if our WSL2 distro is registered."""
