@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
-import time
+import tempfile
 from pathlib import Path
 
 from machine.backend import MachineBackend
@@ -33,6 +33,20 @@ logger = logging.getLogger(__name__)
 
 DISTRO_NAME = "pycrate"
 WSL_DATA_DIR = PYCRATE_HOME / "wsl"
+
+
+def _decode_wsl_output(raw: bytes) -> str:
+    """Decode WSL output which may be UTF-16 LE or UTF-8.
+
+    ``wsl.exe`` on Windows outputs UTF-16 LE for its own messages
+    (like ``--list``, ``--status``) but UTF-8 for command output.
+    """
+    if not raw:
+        return ""
+    try:
+        return raw.decode("utf-16-le")
+    except (UnicodeDecodeError, ValueError):
+        return raw.decode("utf-8", errors="replace").replace("\x00", "")
 
 
 class WSL2Backend(MachineBackend):
@@ -64,12 +78,16 @@ class WSL2Backend(MachineBackend):
 
         logger.info("WSL2 distro created. Running setup...")
 
-        # Run the bootstrap script inside the distro
+        # Write setup script to a temp file inside WSL, then execute it.
+        # This avoids shell quoting issues with inline scripts.
         from machine.image import get_wsl_setup_script
         ssh_pub_key = get_ssh_public_key()
         setup_script = get_wsl_setup_script(ssh_pub_key)
 
-        self._exec_in_distro(f"sh -c '{setup_script}'", timeout=120)
+        # Write the script to the WSL filesystem via stdin
+        script_path = "/tmp/pycrate_setup.sh"
+        self._write_file_to_distro(script_path, setup_script)
+        self._exec_in_distro(f"chmod +x {script_path} && {script_path}", timeout=120)
 
         logger.info("PyCrate Machine (WSL2) created successfully")
 
@@ -114,10 +132,11 @@ class WSL2Backend(MachineBackend):
 
         result = subprocess.run(
             ["wsl", "-l", "--running"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=False, timeout=5,
         )
+        output = _decode_wsl_output(result.stdout)
 
-        if DISTRO_NAME in result.stdout:
+        if DISTRO_NAME in output:
             return MachineState.RUNNING
         return MachineState.STOPPED
 
@@ -125,9 +144,11 @@ class WSL2Backend(MachineBackend):
         """Execute a command inside the WSL2 distro."""
         result = subprocess.run(
             ["wsl", "-d", DISTRO_NAME, "-e", "sh", "-c", command],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=False, timeout=60,
         )
-        return result.returncode, result.stdout, result.stderr
+        stdout = (result.stdout or b"").decode("utf-8", errors="replace")
+        stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+        return result.returncode, stdout, stderr
 
     def exec_stream(self, command: str) -> int:
         """Execute a command with live output streaming."""
@@ -168,25 +189,42 @@ class WSL2Backend(MachineBackend):
         """Check if our WSL2 distro is registered."""
         result = subprocess.run(
             ["wsl", "-l", "-q"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=False, timeout=5,
         )
-        # WSL outputs UTF-16 on some Windows versions
-        output = result.stdout.replace("\x00", "")
+        output = _decode_wsl_output(result.stdout)
         return DISTRO_NAME in output.split()
 
     def _wsl(self, args: list[str], check: bool = True) -> subprocess.CompletedProcess:
         """Run a wsl.exe command."""
         cmd = ["wsl"] + args
         return subprocess.run(
-            cmd, capture_output=True, text=True,
+            cmd, capture_output=True, text=False,
             timeout=120, check=check,
         )
+
+    def _write_file_to_distro(self, path: str, content: str) -> None:
+        """Write a file into the WSL2 distro via stdin pipe.
+
+        Avoids shell quoting issues with inline heredocs.
+        """
+        proc = subprocess.run(
+            ["wsl", "-d", DISTRO_NAME, "-e", "sh", "-c", f"cat > {path}"],
+            input=content.encode("utf-8"),
+            capture_output=True, timeout=30,
+        )
+        if proc.returncode != 0:
+            stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
+            raise RuntimeError(f"Failed to write {path} in distro: {stderr}")
 
     def _exec_in_distro(self, command: str, timeout: int = 60) -> tuple[int, str]:
         """Execute a command in the distro, returning (code, combined output)."""
         result = subprocess.run(
             ["wsl", "-d", DISTRO_NAME, "-e", "sh", "-c", command],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True, text=False, timeout=timeout,
         )
-        combined = result.stdout + result.stderr
+        stdout = (result.stdout or b"").decode("utf-8", errors="replace")
+        stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+        combined = stdout + stderr
+        if result.returncode != 0:
+            logger.warning("Command failed (code %d): %s\n%s", result.returncode, command[:80], combined[:500])
         return result.returncode, combined

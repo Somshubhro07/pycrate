@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # Default paths
 PYCRATE_HOME = Path.home() / ".pycrate"
 CONFIG_FILE = PYCRATE_HOME / "machine.json"
-SSH_KEY_PATH = PYCRATE_HOME / "machine_ed25519"
+SSH_KEY_PATH = PYCRATE_HOME / "machine_rsa"
 CACHE_DIR = PYCRATE_HOME / "cache"
 
 
@@ -118,13 +118,23 @@ def _detect_arch() -> str:
 
 
 def _wsl2_available() -> bool:
-    """Check if WSL2 is available on Windows."""
+    """Check if WSL2 is available on Windows.
+
+    Note: ``wsl --status`` outputs UTF-16 LE on some Windows versions,
+    so we strip null bytes before checking.
+    """
     import subprocess
     try:
         result = subprocess.run(
             ["wsl", "--status"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=False, timeout=5,
         )
-        return "WSL 2" in result.stdout or "Default Version: 2" in result.stdout
+        # Decode as UTF-16 LE, fallback to UTF-8 with null-byte stripping
+        try:
+            output = result.stdout.decode("utf-16-le")
+        except (UnicodeDecodeError, ValueError):
+            output = result.stdout.decode("utf-8", errors="replace").replace("\x00", "")
+
+        return "Default Version: 2" in output or "WSL 2" in output
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False

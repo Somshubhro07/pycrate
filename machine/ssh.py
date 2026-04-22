@@ -55,7 +55,7 @@ def generate_ssh_keypair(key_path: Path) -> Path:
 
     key_path.parent.mkdir(parents=True, exist_ok=True)
 
-    key = paramiko.Ed25519Key.generate()
+    key = paramiko.RSAKey.generate(bits=2048)
     key.write_private_key_file(str(key_path))
 
     # Write public key
@@ -82,7 +82,7 @@ def get_public_key(key_path: Path) -> str:
 
     # Regenerate from private key
     import paramiko
-    key = paramiko.Ed25519Key.from_private_key_file(str(key_path))
+    key = paramiko.RSAKey.from_private_key_file(str(key_path))
     return f"{key.get_name()} {key.get_base64()} pycrate-machine"
 
 

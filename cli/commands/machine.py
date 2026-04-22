@@ -69,7 +69,7 @@ def init(
     system = platform.system()
     if system == "Linux":
         console.print(
-            "[green]✓[/green] Linux detected — no machine needed. "
+            "[green][OK][/green] Linux detected — no machine needed. "
             "PyCrate runs natively on this platform."
         )
         return
@@ -95,7 +95,7 @@ def init(
         be.create()
         config.save()
 
-    console.print("\n[bold green]✓ PyCrate Machine created![/bold green]")
+    console.print("\n[bold green][OK] PyCrate Machine created![/bold green]")
     console.print("  Run [cyan]pycrate machine start[/cyan] to boot it.")
 
 
@@ -105,7 +105,7 @@ def start() -> None:
     console = _get_console()
 
     if platform.system() == "Linux":
-        console.print("[green]✓[/green] Linux — PyCrate runs natively.")
+        console.print("[green][OK][/green] Linux — PyCrate runs natively.")
         return
 
     be, config = _get_backend()
@@ -113,7 +113,7 @@ def start() -> None:
     with console.status("[bold cyan]Starting PyCrate Machine...", spinner="dots"):
         be.start()
 
-    console.print("[bold green]✓ PyCrate Machine is running![/bold green]")
+    console.print("[bold green][OK] PyCrate Machine is running![/bold green]")
     console.print(
         "  All [cyan]pycrate[/cyan] commands now execute "
         "inside the Linux VM transparently."
@@ -134,7 +134,7 @@ def stop() -> None:
     with console.status("[bold cyan]Stopping PyCrate Machine...", spinner="dots"):
         be.stop()
 
-    console.print("[bold green]✓ PyCrate Machine stopped.[/bold green]")
+    console.print("[bold green][OK] PyCrate Machine stopped.[/bold green]")
 
 
 @app.command()
@@ -164,7 +164,7 @@ def destroy(
     from machine.config import CONFIG_FILE
     CONFIG_FILE.unlink(missing_ok=True)
 
-    console.print("[bold green]✓ PyCrate Machine destroyed.[/bold green]")
+    console.print("[bold green][OK] PyCrate Machine destroyed.[/bold green]")
 
 
 @app.command()
@@ -176,7 +176,7 @@ def status() -> None:
     if system == "Linux":
         console.print(
             Panel(
-                "[green]● Native Linux[/green]\n"
+                "[green]* Native Linux[/green]\n"
                 "PyCrate runs containers directly on this host.\n"
                 "No VM required.",
                 title="[bold cyan]PyCrate Machine[/bold cyan]",
@@ -195,7 +195,7 @@ def status() -> None:
     table.add_column("Key", style="bold", width=14)
     table.add_column("Value")
 
-    table.add_row("State", f"[{state_color}]● {state}[/{state_color}]")
+    table.add_row("State", f"[{state_color}]* {state}[/{state_color}]")
     table.add_row("Backend", info.get("backend", "unknown"))
     table.add_row("Platform", system)
     table.add_row("Arch", info.get("arch", config.arch))
