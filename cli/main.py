@@ -22,7 +22,7 @@ import typer
 
 from cli.commands import cluster, compose, containers, dashboard, images, machine, run
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 app = typer.Typer(
     name="pycrate",
@@ -33,7 +33,8 @@ app = typer.Typer(
 )
 
 # Register command groups
-app.add_typer(run.app, name="run", help="Create and start a container")
+# Register run as a top-level command (not a sub-Typer group)
+app.command("run")(run.run)
 app.add_typer(containers.app, name="containers", hidden=True)
 app.add_typer(images.app, name="image", help="Manage images")
 app.add_typer(dashboard.app, name="dashboard", help="Launch the web dashboard")

@@ -37,8 +37,21 @@ from engine.exceptions import CgroupError, OOMKilledError
 
 logger = logging.getLogger(__name__)
 
+def _get_cgroup_root() -> Path:
+    """Find the mount point for cgroup v2."""
+    try:
+        with open("/proc/mounts", "r") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 3 and parts[2] == "cgroup2":
+                    return Path(parts[1])
+    except OSError:
+        pass
+    return Path("/sys/fs/cgroup")
+
+CGROUP_ROOT = _get_cgroup_root()
 # Base path for the PyCrate cgroup hierarchy
-CGROUP_BASE_PATH = Path("/sys/fs/cgroup/pycrate")
+CGROUP_BASE_PATH = CGROUP_ROOT / "pycrate"
 
 
 @dataclass
@@ -104,6 +117,7 @@ class CgroupController:
         self._write_file(
             "cpu.max",
             f"{self.limits.cpu_quota_us} {self.limits.cpu_period_us}",
+            ignore_missing=True,
         )
 
         # Apply memory limit
@@ -111,12 +125,13 @@ class CgroupController:
         self._write_file(
             "memory.max",
             str(self.limits.memory_limit_bytes),
+            ignore_missing=True,
         )
 
         # Disable swap to prevent the container from using swap when it
         # hits the memory limit. We want a clean OOM kill, not degraded
         # performance from swapping.
-        self._write_file("memory.swap.max", "0")
+        self._write_file("memory.swap.max", "0", ignore_missing=True)
 
     def assign(self, pid: int) -> None:
         """Move a process into this cgroup.
@@ -226,20 +241,25 @@ class CgroupController:
                 cgroup_path=str(self.cgroup_path),
             ) from e
 
-    def _write_file(self, filename: str, content: str) -> None:
+    def _write_file(self, filename: str, content: str, ignore_missing: bool = False) -> None:
         """Write a value to a cgroup control file.
 
         Args:
             filename: Name of the cgroup file (e.g., "cpu.max").
             content: Value to write.
+            ignore_missing: If True, do not raise an error if the file does not exist
+                (useful when a specific cgroup controller is not enabled).
 
         Raises:
-            CgroupError: If the write fails.
+            CgroupError: If the write fails (and ignore_missing is False for FileNotFoundError).
         """
         filepath = self.cgroup_path / filename
         try:
             filepath.write_text(content)
         except OSError as e:
+            if ignore_missing and isinstance(e, (FileNotFoundError, PermissionError)):
+                logger.debug("Skipped writing %s (file missing or read-only, likely controller not enabled)", filename)
+                return
             raise CgroupError(
                 f"Failed to write '{content}' to {filepath}: {e}",
                 cgroup_path=str(filepath),
@@ -261,9 +281,9 @@ class CgroupController:
 def verify_cgroup_v2() -> bool:
     """Check if the system is running cgroups v2 (unified hierarchy).
 
-    cgroups v2 is identified by the presence of a cgroup2 mount at
-    /sys/fs/cgroup. On cgroups v1 systems, this path contains multiple
-    controller-specific directories (cpu, memory, etc.) instead.
+    cgroups v2 is identified by the presence of a cgroup2 mount.
+    On pure v2 systems, it's at /sys/fs/cgroup. On WSL2 hybrid mode,
+    it might be at /sys/fs/cgroup/unified.
 
     Returns:
         True if cgroups v2 is available and mounted.
@@ -272,7 +292,7 @@ def verify_cgroup_v2() -> bool:
         with open("/proc/mounts", "r") as f:
             for line in f:
                 parts = line.split()
-                if len(parts) >= 3 and parts[1] == "/sys/fs/cgroup" and parts[2] == "cgroup2":
+                if len(parts) >= 3 and parts[2] == "cgroup2":
                     return True
     except OSError:
         pass
@@ -296,7 +316,7 @@ def ensure_pycrate_cgroup() -> None:
 
     # Enable CPU and memory controllers in the root cgroup so our
     # sub-cgroups can use them
-    subtree_control = Path("/sys/fs/cgroup/cgroup.subtree_control")
+    subtree_control = CGROUP_ROOT / "cgroup.subtree_control"
     try:
         current = subtree_control.read_text()
         controllers_needed = []
@@ -309,9 +329,13 @@ def ensure_pycrate_cgroup() -> None:
             subtree_control.write_text(" ".join(controllers_needed))
             logger.info("Enabled cgroup controllers: %s", controllers_needed)
     except OSError as e:
-        logger.warning(
-            "Could not enable cgroup controllers (may already be enabled): %s", e
-        )
+        # On WSL2, controllers may already be enabled by our setup script.
+        # Only warn if the file exists but we can't write — otherwise it's
+        # expected (e.g., controllers already delegated).
+        if subtree_control.exists():
+            logger.debug("cgroup controllers likely already enabled: %s", e)
+        else:
+            logger.debug("cgroup subtree_control not found (expected on first boot): %s", e)
 
     # Create the pycrate parent cgroup
     CGROUP_BASE_PATH.mkdir(parents=True, exist_ok=True)
@@ -321,6 +345,7 @@ def ensure_pycrate_cgroup() -> None:
     try:
         pycrate_subtree.write_text("+cpu +memory")
     except OSError as e:
-        logger.warning(
-            "Could not enable controllers in pycrate cgroup: %s", e
-        )
+        if pycrate_subtree.exists():
+            logger.debug("pycrate cgroup controllers likely already enabled: %s", e)
+        else:
+            logger.debug("pycrate cgroup subtree_control not found: %s", e)

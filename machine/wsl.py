@@ -90,7 +90,7 @@ class WSL2Backend(MachineBackend):
         # Write the script to the WSL filesystem via stdin
         script_path = "/tmp/pycrate_setup.sh"
         self._write_file_to_distro(script_path, setup_script)
-        self._exec_in_distro(f"chmod +x {script_path} && {script_path}", timeout=180)
+        self._exec_in_distro(f"chmod +x {script_path} && {script_path}", timeout=600)
 
         logger.info("PyCrate Machine (WSL2) created successfully")
 
@@ -98,7 +98,8 @@ class WSL2Backend(MachineBackend):
         """Start the WSL2 distribution.
 
         WSL2 distros start automatically when you run a command in them,
-        so "starting" just means verifying it's responsive.
+        so "starting" means booting, setting up cgroups v2, and verifying
+        it's responsive.
         """
         if not self._distro_exists():
             raise RuntimeError(

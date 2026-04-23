@@ -202,7 +202,7 @@ echo "http://dl-cdn.alpinelinux.org/alpine/v{ALPINE_VERSION}/community" >> /etc/
 
 # Install essentials
 apk update
-apk add --no-cache python3 py3-pip openssh-server bash iproute2 iptables
+apk add --no-cache python3 py3-pip openssh-server bash iproute2 iptables build-base python3-dev
 
 # Configure SSH
 mkdir -p /root/.ssh
