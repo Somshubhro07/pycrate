@@ -29,6 +29,7 @@ State machine:
 from __future__ import annotations
 
 import enum
+import json
 import logging
 import os
 import signal
@@ -40,6 +41,7 @@ from typing import Any
 
 from engine.cgroups import CgroupController, CgroupLimits, ensure_pycrate_cgroup
 from engine.config import ContainerConfig
+from engine.overlay import CONTAINERS_DIR
 from engine.exceptions import (
     ContainerAlreadyRunningError,
     ContainerAlreadyStoppedError,
@@ -180,6 +182,7 @@ class Container:
             )
 
             self.status = ContainerStatus.CREATED
+            self._save_state()
             logger.info("Container %s created successfully", self.container_id)
 
         except Exception as e:
@@ -280,7 +283,7 @@ class Container:
                     self._network_config.container_ip,
                 )
             except Exception as e:
-                logger.warning(
+                logger.debug(
                     "Networking setup failed for %s (container will run without network): %s",
                     self.container_id, e,
                 )
@@ -295,6 +298,7 @@ class Container:
             self.status = ContainerStatus.RUNNING
             self._finalized = False
             self._stop_event.clear()
+            self._save_state()
 
             # Start background thread to monitor child process
             self._monitor_thread = threading.Thread(
@@ -560,6 +564,37 @@ class Container:
             self.status = ContainerStatus.STOPPED
             self.stopped_at = datetime.now(timezone.utc)
             self._pid = None
+            self._save_state()
+
+
+    def _save_state(self) -> None:
+        """Persist container metadata to disk for cross-process discovery."""
+        state_file = CONTAINERS_DIR / self.container_id / "state.json"
+        try:
+            state_file.parent.mkdir(parents=True, exist_ok=True)
+            state = {
+                "container_id": self.container_id,
+                "name": self.name,
+                "image": self.config.image,
+                "command": self.config.command,
+                "status": self.status.value,
+                "pid": self._pid,
+                "created_at": self.created_at.isoformat() if self.created_at else None,
+                "started_at": self.started_at.isoformat() if self.started_at else None,
+                "stopped_at": self.stopped_at.isoformat() if self.stopped_at else None,
+                "exit_code": self._exit_code,
+            }
+            state_file.write_text(json.dumps(state, indent=2))
+        except OSError as e:
+            logger.debug("Failed to save container state: %s", e)
+
+    def _remove_state(self) -> None:
+        """Remove persisted state file."""
+        state_file = CONTAINERS_DIR / self.container_id / "state.json"
+        try:
+            state_file.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 class ContainerManager:
@@ -581,7 +616,8 @@ class ContainerManager:
     def initialize(self) -> None:
         """Initialize the engine.
 
-        Call once at startup. Sets up the cgroup hierarchy and network bridge.
+        Call once at startup. Sets up the cgroup hierarchy, network bridge,
+        and loads persisted container state from disk.
 
         Raises:
             CgroupError: If cgroups v2 is not available.
@@ -593,8 +629,79 @@ class ContainerManager:
         logger.info("Initializing PyCrate engine (max_containers=%d)", self.max_containers)
         ensure_pycrate_cgroup()
         setup_bridge()
+        self._load_persisted_state()
         self._initialized = True
         logger.info("PyCrate engine initialized")
+
+    def _load_persisted_state(self) -> None:
+        """Scan the containers directory for state.json files and load them.
+
+        This allows `pycrate ps` to discover containers created by previous
+        CLI invocations. For containers marked as 'running', we verify the PID
+        is still alive and correct stale state.
+        """
+        if not CONTAINERS_DIR.exists():
+            return
+
+        for container_dir in CONTAINERS_DIR.iterdir():
+            if not container_dir.is_dir():
+                continue
+            state_file = container_dir / "state.json"
+            if not state_file.exists():
+                continue
+
+            try:
+                state = json.loads(state_file.read_text())
+                container_id = state["container_id"]
+
+                # Skip if already loaded (e.g., from current session)
+                if container_id in self._containers:
+                    continue
+
+                # Check if the process is still alive for 'running' containers
+                pid = state.get("pid")
+                status = state.get("status", "stopped")
+                if status == "running" and pid:
+                    try:
+                        os.kill(pid, 0)  # Signal 0 checks existence
+                    except (ProcessLookupError, PermissionError):
+                        # Process is gone, correct the state
+                        status = "stopped"
+                        state["status"] = "stopped"
+                        state["pid"] = None
+                        try:
+                            state_file.write_text(json.dumps(state, indent=2))
+                        except OSError:
+                            pass
+
+                # Build a minimal config for display purposes
+                config = ContainerConfig(
+                    image=state.get("image", "unknown"),
+                    command=state.get("command", ["/bin/sh"]),
+                    name=state.get("name", container_id),
+                    container_id=container_id,
+                )
+                container = Container(config)
+                container.status = ContainerStatus(status)
+                container._pid = state.get("pid")
+                container._exit_code = state.get("exit_code")
+
+                if state.get("created_at"):
+                    try:
+                        container.created_at = datetime.fromisoformat(state["created_at"])
+                    except (ValueError, TypeError):
+                        pass
+                if state.get("started_at"):
+                    try:
+                        container.started_at = datetime.fromisoformat(state["started_at"])
+                    except (ValueError, TypeError):
+                        pass
+
+                self._containers[container_id] = container
+                logger.debug("Loaded persisted container: %s (%s)", container_id, status)
+
+            except (json.JSONDecodeError, KeyError, OSError) as e:
+                logger.debug("Skipped invalid state file %s: %s", state_file, e)
 
     def create_container(self, config: ContainerConfig) -> Container:
         """Create a new container with the given configuration.

@@ -184,12 +184,15 @@ def setup_mounts(rootfs: Path) -> None:
     """
     rootfs_str = str(rootfs)
 
-    # First, make the rootfs a bind mount of itself.
+    # CRITICAL: Make the ENTIRE inherited mount tree private before doing
+    # anything else. Without this, mount events (especially sysfs) propagate
+    # back to the host via shared mount propagation and can unmount the
+    # host's cgroup2 filesystem. This must happen before any other mount().
+    mount("none", "/", flags=MS_PRIVATE | MS_REC)
+
+    # Make the rootfs a bind mount of itself.
     # pivot_root requires both new_root and put_old to be mount points.
     mount(rootfs_str, rootfs_str, flags=MS_BIND | MS_REC)
-
-    # Make all mount propagation private so nothing leaks to the host
-    mount("none", rootfs_str, flags=MS_PRIVATE | MS_REC)
 
     # Mount /proc — gives the container its own process view
     # (only sees processes in its PID namespace)
